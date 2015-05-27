@@ -30,6 +30,7 @@ namespace ofxKinectForWindows2 {
 		shared_ptr<Source::LongExposureInfrared> initLongExposureInfraredSource();
 		shared_ptr<Source::BodyIndex> initBodyIndexSource();
 		shared_ptr<Source::Body> initBodySource();
+		bool setDatabase(wstring _gbd);
 
 		void update();
 

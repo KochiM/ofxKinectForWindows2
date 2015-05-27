@@ -100,6 +100,12 @@ namespace ofxKinectForWindows2 {
 	}
 
 	//----------
+	bool Device::setDatabase(wstring _gbd){
+		if(getBodySource() == NULL) { ofLog(OF_LOG_ERROR, "First need init a body source"); return false; }
+		return getBodySource()->setupVGBF(this->sensor, _gbd);
+	}
+
+	//----------
 	void Device::update() {
 		for(auto source : this->sources) {
 			source->update();

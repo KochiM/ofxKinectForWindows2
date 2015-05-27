@@ -50,6 +50,12 @@ namespace ofxKinectForWindows2 {
 				}
 
 				bodies.resize(BODY_COUNT);
+				gestureResults.resize(BODY_COUNT);
+				for (int i =0; i < BODY_COUNT; i++) { 
+					gestureResults[i].id = -1;
+					gestureResults[i].value =  false; 
+				}
+				useGesture = false;
 				initBonesDefinition();
 			}
 			catch (std::exception & e) {
@@ -96,7 +102,52 @@ namespace ofxKinectForWindows2 {
 			BONEDEF_ADD	(AnkleLeft,	FootLeft);
 #undef BONEDEF_ADD
 		}
+		//----------
+		
+	bool Body::setupVGBF(IKinectSensor * sensor, wstring gbd){
+		wstring file = gbd.append(L".gbd");
+			if(SUCCEEDED(CreateVisualGestureBuilderDatabaseInstanceFromFile(file.c_str(), &database))){
+				for (int i = 0; i < BODY_COUNT; i++){
+					if(FAILED(CreateVisualGestureBuilderFrameSource(sensor, 0, &pGestureSource[i] ))){
+						throw(Exception("Failed to create VisualGestureBuilderFrameSource"));
+						return false;
+					}
 
+					if(FAILED(pGestureSource[i]->OpenReader(&pGestureReader[i]))){
+						throw(Exception("Failed to open reader"));
+						return false;
+					}
+				}
+				UINT counts;
+				database->get_AvailableGesturesCount(&counts);
+				pGesture.resize(counts);
+				database->get_AvailableGestures(counts, &pGesture[0]);
+
+				for (int i = 0; i < counts; i++){
+					GestureType t;
+					pGesture[i]->get_GestureType(&t);
+					if(pGesture[i] != nullptr ){
+						for (int j = 0; j < BODY_COUNT; j++){
+							if(FAILED(pGestureSource[j]->AddGesture(pGesture[i]))){
+								throw(Exception("Failed to add gesture"));
+								return false;
+							}
+							if(FAILED(pGestureSource[j]->SetIsEnabled(pGesture[i], true))){
+								throw(Exception("Failed to setup"));
+								return false;
+							}
+						}
+					}else{
+						throw(Exception("gesture is null"));
+						return false;
+					}
+				}
+				useGesture = true;
+				return useGesture;
+			}
+			return false;
+		}
+		
 		//----------
 		void Body::update() {
 			CHECK_OPEN
@@ -147,7 +198,7 @@ namespace ofxKinectForWindows2 {
 							}
 
 							body.trackingId = trackingId;
-
+							if (useGesture){ pGestureSource[i]->put_TrackingId(trackingId); }
 							// retrieve joint position & orientation
 
 							_Joint joints[JointType_Count];
@@ -178,6 +229,32 @@ namespace ofxKinectForWindows2 {
 
 							body.leftHandState = leftHandState;
 							body.rightHandState = rightHandState;
+							if(useGesture){
+								IVisualGestureBuilderFrame* pGestureFrame = nullptr;
+								if(SUCCEEDED(pGestureReader[i]->CalculateAndAcquireLatestFrame(&pGestureFrame))){
+									BOOLEAN bGestureTracked = false;
+									pGestureFrame->get_IsTrackingIdValid(&bGestureTracked);
+									if(bGestureTracked){
+										IDiscreteGestureResult* pGestureResult = nullptr;
+										for (int j = 0; j < pGesture.size(); j++){
+											if(SUCCEEDED(pGestureFrame->get_DiscreteGestureResult(pGesture[j], &pGestureResult))){
+												BOOLEAN bDetected = false;
+												pGestureResult->get_Detected(&bDetected);
+												gestureResults[i].value = bDetected;
+												if(bDetected){
+													gestureResults[i].id = j;
+													UINT64 num;
+													pGestureFrame->get_TrackingId(&num);
+													ofLog(OF_LOG_VERBOSE, "gesture:"+ofToString(j)+", id:"+ofToString(num));
+												}
+											}
+										}
+										SafeRelease( pGestureResult );
+									}
+								}
+								SafeRelease( pGestureFrame );
+							}
+							//---------
 						}
 					}
 				}
@@ -305,6 +382,11 @@ namespace ofxKinectForWindows2 {
 			ofSetColor(color);
 			ofCircle(handPos, 50);
 			ofDisableAlphaBlending();
+		}
+
+		//----------
+		ofVec2f Body::getJoint(int i, JointType j, ProjectionCoordinates proj) {
+			return this->bodies[i].joints[j].getProjected(coordinateMapper, proj);
 		}
 	}
 }
